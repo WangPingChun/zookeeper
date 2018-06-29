@@ -3,12 +3,10 @@ package cn.chinaunicom.js.curator;
 import org.apache.curator.RetryPolicy;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
-import org.apache.curator.retry.*;
-import org.apache.zookeeper.CreateMode;
-import org.apache.zookeeper.ZooDefs;
-import org.apache.zookeeper.data.Stat;
-
-import java.util.List;
+import org.apache.curator.framework.recipes.cache.PathChildrenCache;
+import org.apache.curator.framework.recipes.cache.PathChildrenCacheEvent;
+import org.apache.curator.framework.recipes.cache.PathChildrenCacheListener;
+import org.apache.curator.retry.RetryNTimes;
 
 /**
  * @author : chris
@@ -73,8 +71,8 @@ public class CuratorOperator {
 
     public static void main(String[] args) throws Exception {
         CuratorOperator operator = new CuratorOperator();
-        boolean started = operator.client.isStarted();
-        System.out.println("当前客户端状态：" + (started ? "连接中" : "已关闭"));
+//        boolean started = operator.client.isStarted();
+//        System.out.println("当前客户端状态：" + (started ? "连接中" : "已关闭"));
 
         String nodePath = "/super";
         // 创建节点
@@ -120,9 +118,63 @@ public class CuratorOperator {
 //        Stat stat = operator.client.checkExists().forPath(nodePath);
 //        System.out.println(stat);
 
-        // usingWatcher监听只会触发一次
-        operator.client.getData().usingWatcher(new MyCuratorWatcher()).forPath(nodePath);
+        // usingWatcher监听只会触发一次,监听完毕后就销毁
+//        operator.client.getData().usingWatcher(new MyCuratorWatcher()).forPath(nodePath);
 
+        // NodeCache:监听数据节点的变更,会触发时间
+//        final NodeCache nodeCache = new NodeCache(operator.client, nodePath);
+        // buildIntial:初始化的时候获取node的值并缓存到本地
+//        nodeCache.start(true);
+//        if (nodeCache.getCurrentData() != null) {
+//            System.out.println("节点初始化数据为:" + new String(nodeCache.getCurrentData().getData()) + "!");
+//        } else {
+//            System.out.println("节点初始化数据为空!");
+//        }
+//        nodeCache.getListenable().addListener(new NodeCacheListener() {
+//            @Override
+//            public void nodeChanged() throws Exception {
+//                String data = new String(nodeCache.getCurrentData().getData());
+//                System.out.println("节点路径:" + nodeCache.getPath() + "|数据:" + data);
+//            }
+//        });
+
+        // 为子节点添加watch
+        String childNodePathCache = nodePath;
+        // PathChildrenCache:监听数据即诶单的增删改,会触发事件
+        // cacheData:设置缓存节点的数据状态
+        final PathChildrenCache childrenCache = new PathChildrenCache(operator.client, childNodePathCache, true);
+        /*
+         * StartMode:初始化方式
+         * POST_INITIALIZED_EVENT:异步初始化，初始化之后会触发事件
+         * NORMAL:异步初始化
+         * BUILD_INITIAL_CACHE:同步初始化
+         */
+        childrenCache.start(PathChildrenCache.StartMode.POST_INITIALIZED_EVENT);
+//        Thread.sleep(1000);
+//        final List<ChildData> childDataList = childrenCache.getCurrentData();
+//        System.out.println("当前数据节点的子节点数据列表:");
+//        for (ChildData childData : childDataList) {
+//            System.out.println(new String(childData.getData()));
+//        }
+        // 绑定事件
+        childrenCache.getListenable().addListener(new PathChildrenCacheListener() {
+            @Override
+            public void childEvent(CuratorFramework curatorFramework, PathChildrenCacheEvent event) {
+                final PathChildrenCacheEvent.Type type = event.getType();
+                if (type.equals(PathChildrenCacheEvent.Type.INITIALIZED)) {
+                    System.out.println("子节点初始化ok");
+                } else if (type.equals(PathChildrenCacheEvent.Type.CHILD_ADDED)) {
+                    System.out.println("添加子节点:" + event.getData().getPath());
+                    System.out.println("子节点数据:" + new String(event.getData().getData()));
+                } else if (type.equals(PathChildrenCacheEvent.Type.CHILD_REMOVED)) {
+                    System.out.println("删除子节点:" + event.getData().getPath());
+                } else if (type.equals(PathChildrenCacheEvent.Type.CHILD_UPDATED)) {
+                    System.out.println("修改子节点路径:" + event.getData().getPath());
+                    System.out.println("修改子节点数据:" + new String(event.getData().getData()));
+                }
+
+            }
+        });
 
         Thread.sleep(1000000);
         operator.close();
